@@ -28,3 +28,6 @@ Thumbs.db
 
 # Environment
 .env
+
+# Kotlin language server (fwcd) stray database
+kls_database.db
