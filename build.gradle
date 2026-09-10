@@ -33,7 +33,7 @@ kotlin {
 
 tasks {
     runServer {
-        version = minecraftVersion(minecraft_version)
+        minecraftVersion(minecraft_version)
     }
 }
 
