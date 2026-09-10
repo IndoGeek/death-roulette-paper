@@ -31,8 +31,10 @@ kotlin {
     jvmToolchain(17)
 }
 
-runPaper {
-    version = paper_api_version
+tasks {
+    runServer {
+        version = minecraftVersion(minecraft_version)
+    }
 }
 
 jar {
