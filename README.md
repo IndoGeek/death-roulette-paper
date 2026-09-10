@@ -56,9 +56,11 @@ By default, roulette commands require operator permissions.
 
 # Configuration
 
-After the first launch, the mod creates:
+After the first launch, the plugin creates:
 
-config/deathroulette.properties
+```
+plugins/DeathRoulette/deathroulette.properties
+```
 
 The configuration controls things such as:
 
@@ -79,24 +81,26 @@ to apply it.
 
 # Installation
 
-Death Roulette is built for Minecraft 1.20.1 with Fabric.
+Death Roulette is a Paper plugin built for Minecraft 1.20.1.
 
-1. Install Fabric Loader and Fabric API.
+1. Install Paper 1.20.1.
 2. Download the Death Roulette .jar.
-3. Put it in the server’s mods folder.
-4. Start the server.
+3. Put it in the server’s plugins folder.
+4. Start (or restart) the server.
 
-The mod is primarily intended for server-side use.
+The plugin is primarily intended for server-side use. The Kotlin runtime is
+bundled inside the plugin jar, so no extra dependencies are required.
 
 # Development
 
-This project is built with Gradle and uses the Fabric toolchain.
+This project is a Kotlin Paper plugin built with Gradle.
 
 Clone the repository and run:
 ```
 ./gradlew build
 ```
-The compiled mod will be placed in:
+The compiled plugin (a self-contained "fat" jar including the relocated Kotlin
+runtime) will be placed in:
 ```
 build/libs/
 ```
