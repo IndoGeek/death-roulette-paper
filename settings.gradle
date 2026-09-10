@@ -1,13 +1,12 @@
 pluginManagement {
     repositories {
-        mavenCentral()
         gradlePluginPortal()
-        maven {
-            name = 'PaperMC'
-            url = 'https://repo.papermc.io/repository/maven-public/'
-        }
+        mavenCentral()
     }
 }
 
-// Should match your plugin main id
-rootProject.name = 'deathroulette'
+plugins {
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
+}
+
+rootProject.name = 'DeathRoulette'

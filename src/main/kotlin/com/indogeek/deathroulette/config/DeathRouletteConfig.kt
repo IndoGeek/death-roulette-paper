@@ -1,355 +1,225 @@
 package com.indogeek.deathroulette.config
 
-import com.indogeek.deathroulette.DeathRoulettePlugin
+import java.io.IOException
+import java.nio.file.Files
 import java.util.Properties
+import org.bukkit.configuration.file.YamlConfiguration
 import org.bukkit.plugin.java.JavaPlugin
 
 /**
- * Configuration for Death Roulette.
+ * User facing settings, stored as `plugins/DeathRoulette/config.yml`.
  *
- * Saved to config/deathroulette.properties inside the plugin's data folder.
- * Values are read once on load; use /roulette reload to re-read the file.
+ * The file is created from the bundled template on first start. Missing keys fall back to that
+ * template, so a plugin update never leaves an incomplete configuration behind. Call [load] again,
+ * through `/roulette reload`, to pick up manual edits.
  */
 class DeathRouletteConfig(private val plugin: JavaPlugin) {
 
-    private val defaultEnabled = true
-    private val defaultPlayerChance = 30.0
-    private val defaultMobSearchRadius = 32.0
-    private val defaultRouletteIntervalDays = 10L
+    var enabled: Boolean = true
+        private set
 
-    private val defaultAllowNonOperators = false
-    private val defaultAllowPassiveMobs = true
-    private val defaultAllowHostileMobs = true
+    var intervalDays: Long = 10L
+        private set
 
-    private val defaultShowStartTitle = true
-    private val defaultShowCompletionTitle = true
-    private val defaultShowResultActionbar = true
-    private val defaultShowStartParticles = true
+    var playerChance: Double = 30.0
+        private set
 
-    private val defaultPlayStartSound = true
-    private val defaultPlayCountdownSound = true
-    private val defaultPlayPlayerDeathSound = true
-    private val defaultPlayMobDeathSound = true
+    var mobSearchRadius: Double = 32.0
+        private set
 
-    private var enabled: Boolean = defaultEnabled
-    private var playerChance: Double = defaultPlayerChance
-    private var mobSearchRadius: Double = defaultMobSearchRadius
-    private var rouletteIntervalDays: Long = defaultRouletteIntervalDays
+    var allowNonOperators: Boolean = false
+        private set
 
-    private var allowNonOperators: Boolean = defaultAllowNonOperators
-    private var allowPassiveMobs: Boolean = defaultAllowPassiveMobs
-    private var allowHostileMobs: Boolean = defaultAllowHostileMobs
+    var allowPassiveMobs: Boolean = true
+        private set
 
-    private var showStartTitle: Boolean = defaultShowStartTitle
-    private var showCompletionTitle: Boolean = defaultShowCompletionTitle
-    private var showResultActionbar: Boolean = defaultShowResultActionbar
-    private var showStartParticles: Boolean = defaultShowStartParticles
+    var allowHostileMobs: Boolean = true
+        private set
 
-    private var playStartSound: Boolean = defaultPlayStartSound
-    private var playCountdownSound: Boolean = defaultPlayCountdownSound
-    private var playPlayerDeathSound: Boolean = defaultPlayPlayerDeathSound
-    private var playMobDeathSound: Boolean = defaultPlayMobDeathSound
+    var showStartTitle: Boolean = true
+        private set
 
-    fun canUseCommands(op: Boolean): Boolean = op || allowNonOperators
+    var showCompletionTitle: Boolean = true
+        private set
 
+    var showResultActionBar: Boolean = true
+        private set
+
+    var showStartParticles: Boolean = true
+        private set
+
+    var playStartSound: Boolean = true
+        private set
+
+    var playCountdownSound: Boolean = true
+        private set
+
+    var playPlayerDeathSound: Boolean = true
+        private set
+
+    var playMobDeathSound: Boolean = true
+        private set
+
+    /** Reads the configuration from disk, falling back to the bundled defaults where needed. */
     fun load() {
-        val properties = Properties()
-        val path = plugin.dataFolder.toPath().resolve("deathroulette.properties")
+        migrateLegacyFile()
+        plugin.saveDefaultConfig()
+        plugin.reloadConfig()
 
-        if (!java.nio.file.Files.exists(path)) {
-            setDefaults()
-            save()
+        val config = plugin.config
+        bundledDefaults()?.let(config::setDefaults)
+
+        enabled = config.getBoolean(ENABLED, enabled)
+        intervalDays =
+            config.long(INTERVAL_DAYS, intervalDays, MIN_INTERVAL_DAYS, MAX_INTERVAL_DAYS)
+        playerChance = config.double(PLAYER_CHANCE, playerChance, MIN_CHANCE, MAX_CHANCE)
+        mobSearchRadius = config.double(MOB_SEARCH_RADIUS, mobSearchRadius, MIN_RADIUS, MAX_RADIUS)
+
+        allowNonOperators = config.getBoolean(ALLOW_NON_OPERATORS, allowNonOperators)
+        allowPassiveMobs = config.getBoolean(PASSIVE_MOBS, allowPassiveMobs)
+        allowHostileMobs = config.getBoolean(HOSTILE_MOBS, allowHostileMobs)
+
+        showStartTitle = config.getBoolean(START_TITLE, showStartTitle)
+        showCompletionTitle = config.getBoolean(COMPLETION_TITLE, showCompletionTitle)
+        showResultActionBar = config.getBoolean(RESULT_ACTION_BAR, showResultActionBar)
+        showStartParticles = config.getBoolean(START_PARTICLES, showStartParticles)
+
+        playStartSound = config.getBoolean(START_SOUND, playStartSound)
+        playCountdownSound = config.getBoolean(COUNTDOWN_SOUND, playCountdownSound)
+        playPlayerDeathSound = config.getBoolean(PLAYER_DEATH_SOUND, playPlayerDeathSound)
+        playMobDeathSound = config.getBoolean(MOB_DEATH_SOUND, playMobDeathSound)
+    }
+
+    /** True when [op] or the configuration lets every player run the commands. */
+    fun canBypassPermissions(op: Boolean): Boolean = op || allowNonOperators
+
+    /** Loads the template shipped inside the jar so missing keys still resolve. */
+    private fun bundledDefaults(): YamlConfiguration? =
+        plugin.getResource(FILE_NAME)?.bufferedReader()?.use(YamlConfiguration::loadConfiguration)
+
+    /**
+     * Converts a pre-YAML `deathroulette.properties` into `config.yml` exactly once, then removes
+     * the old file so the migration cannot run twice.
+     */
+    private fun migrateLegacyFile() {
+        val legacy = plugin.dataPath.resolve(LEGACY_FILE_NAME)
+        if (Files.notExists(legacy)) {
             return
         }
-
+        val target = plugin.dataPath.resolve(FILE_NAME)
         try {
-            java.nio.file.Files.newInputStream(path).use { input ->
-                properties.load(input)
+            if (Files.notExists(target)) {
+                val properties = Properties()
+                Files.newInputStream(legacy).use(properties::load)
+
+                val migrated = bundledDefaults() ?: YamlConfiguration()
+                var moved = 0
+                for ((legacyKey, path) in LEGACY_KEYS) {
+                    val raw = properties.getProperty(legacyKey)?.trim() ?: continue
+                    migrated.set(
+                        path,
+                        raw.toBooleanStrictOrNull()
+                            ?: raw.toLongOrNull()
+                            ?: raw.toDoubleOrNull()
+                            ?: continue,
+                    )
+                    moved++
+                }
+                migrated.save(target.toFile())
+                plugin.componentLogger.info(
+                    "Migrated {} setting(s) from {} to {}.",
+                    moved,
+                    LEGACY_FILE_NAME,
+                    FILE_NAME,
+                )
             }
-
-            enabled = parseBoolean(properties, "enabled", defaultEnabled)
-
-            playerChance = parseDouble(
-                properties, "player_chance", defaultPlayerChance, 0.0, 100.0
+            Files.deleteIfExists(legacy)
+        } catch (exception: IOException) {
+            plugin.componentLogger.warn(
+                "Could not migrate {}; it was left in place.",
+                LEGACY_FILE_NAME,
+                exception,
             )
-
-            mobSearchRadius = parseDouble(
-                properties, "mob_search_radius", defaultMobSearchRadius, 1.0, 128.0
-            )
-
-            rouletteIntervalDays = parseLong(
-                properties, "roulette_interval_days", defaultRouletteIntervalDays, 1L, 1000000L
-            )
-
-            allowNonOperators = parseBoolean(properties, "allow_non_operators", defaultAllowNonOperators)
-
-            allowPassiveMobs = parseBoolean(properties, "allow_passive_mobs", defaultAllowPassiveMobs)
-
-            allowHostileMobs = parseBoolean(properties, "allow_hostile_mobs", defaultAllowHostileMobs)
-
-            showStartTitle = parseBoolean(properties, "show_start_title", defaultShowStartTitle)
-
-            showCompletionTitle = parseBoolean(properties, "show_completion_title", defaultShowCompletionTitle)
-
-            showResultActionbar = parseBoolean(properties, "show_result_actionbar", defaultShowResultActionbar)
-
-            showStartParticles = parseBoolean(properties, "show_start_particles", defaultShowStartParticles)
-
-            playStartSound = parseBoolean(properties, "play_start_sound", defaultPlayStartSound)
-
-            playCountdownSound = parseBoolean(properties, "play_countdown_sound", defaultPlayCountdownSound)
-
-            playPlayerDeathSound = parseBoolean(properties, "play_player_death_sound", defaultPlayPlayerDeathSound)
-
-            playMobDeathSound = parseBoolean(properties, "play_mob_death_sound", defaultPlayMobDeathSound)
-
-            save()
-        } catch (e: Exception) {
-            plugin.logger.warning("Failed to load configuration: ${e.message}")
-            setDefaults()
         }
     }
 
-    fun save() {
-        try {
-            plugin.dataFolder.mkdirs()
-            val path = plugin.dataFolder.toPath().resolve("deathroulette.properties")
-            java.nio.file.Files.newBufferedWriter(path).use { writer ->
-                writer.write("# ==========================================")
-                writer.newLine()
-                writer.write("# Death Roulette Configuration")
-                writer.newLine()
-                writer.write("# ==========================================")
-                writer.newLine()
-                writer.newLine()
-
-                writer.write("# Master switch for automatic Death Roulette.")
-                writer.newLine()
-                writer.write("# true  = Death Roulette runs automatically.")
-                writer.newLine()
-                writer.write("# false = Death Roulette is disabled.")
-                writer.newLine()
-                writer.write("enabled=" + enabled)
-                writer.newLine()
-                writer.newLine()
-
-                writer.write("# Number of Minecraft days between roulette events.")
-                writer.newLine()
-                writer.write("roulette_interval_days=" + rouletteIntervalDays)
-                writer.newLine()
-                writer.newLine()
-
-                writer.write("# Chance of selecting a player instead of a mob.")
-                writer.newLine()
-                writer.write("# 0.0   = always mob")
-                writer.newLine()
-                writer.write("# 50.0  = 50% player / 50% mob")
-                writer.newLine()
-                writer.write("# 100.0 = always player")
-                writer.newLine()
-                writer.write("player_chance=" + playerChance)
-                writer.newLine()
-                writer.newLine()
-
-                writer.write("# Radius used when searching for nearby mobs.")
-                writer.newLine()
-                writer.write("mob_search_radius=" + mobSearchRadius)
-                writer.newLine()
-                writer.newLine()
-
-                writer.write("# ==========================================")
-                writer.newLine()
-                writer.write("# Command Permissions")
-                writer.newLine()
-                writer.write("# ==========================================")
-                writer.newLine()
-                writer.newLine()
-
-                writer.write("# Allow non-operators to use /roulette commands.")
-                writer.newLine()
-                writer.write("# false = operators only")
-                writer.newLine()
-                writer.write("# true  = all players can use commands")
-                writer.newLine()
-                writer.write("allow_non_operators=" + allowNonOperators)
-                writer.newLine()
-                writer.newLine()
-
-                writer.write("# ==========================================")
-                writer.newLine()
-                writer.write("# Mob Selection")
-                writer.newLine()
-                writer.write("# ==========================================")
-                writer.newLine()
-                writer.newLine()
-
-                writer.write("# Allow passive/non-hostile mobs to be selected.")
-                writer.newLine()
-                writer.write("allow_passive_mobs=" + allowPassiveMobs)
-                writer.newLine()
-                writer.newLine()
-
-                writer.write("# Allow hostile mobs to be selected.")
-                writer.newLine()
-                writer.write("allow_hostile_mobs=" + allowHostileMobs)
-                writer.newLine()
-                writer.newLine()
-
-                writer.write("# ==========================================")
-                writer.newLine()
-                writer.write("# Visual Settings")
-                writer.newLine()
-                writer.write("# ==========================================")
-                writer.newLine()
-                writer.newLine()
-
-                writer.write("# Show the \"DEATH ROULETTE STARTED\" title.")
-                writer.newLine()
-                writer.write("show_start_title=" + showStartTitle)
-                writer.newLine()
-                writer.newLine()
-
-                writer.write("# Show the \"DEATH ROULETTE COMPLETE\" title.")
-                writer.newLine()
-                writer.write("show_completion_title=" + showCompletionTitle)
-                writer.newLine()
-                writer.newLine()
-
-                writer.write("# Show the selected player/mob result in the action bar.")
-                writer.newLine()
-                writer.write("show_result_actionbar=" + showResultActionbar)
-                writer.newLine()
-                writer.newLine()
-
-                writer.write("# Show Totem of Undying particles when roulette starts.")
-                writer.newLine()
-                writer.write("show_start_particles=" + showStartParticles)
-                writer.newLine()
-                writer.newLine()
-
-                writer.write("# ==========================================")
-                writer.newLine()
-                writer.write("# Sound Settings")
-                writer.newLine()
-                writer.write("# ==========================================")
-                writer.newLine()
-                writer.newLine()
-
-                writer.write("# Play the roulette-start sound.")
-                writer.newLine()
-                writer.write("play_start_sound=" + playStartSound)
-                writer.newLine()
-                writer.newLine()
-
-                writer.write("# Play the note-block countdown sounds.")
-                writer.newLine()
-                writer.write("play_countdown_sound=" + playCountdownSound)
-                writer.newLine()
-                writer.newLine()
-
-                writer.write("# Play the player death sound.")
-                writer.newLine()
-                writer.write("play_player_death_sound=" + playPlayerDeathSound)
-                writer.newLine()
-                writer.newLine()
-
-                writer.write("# Play the mob death sound.")
-                writer.newLine()
-                writer.write("play_mob_death_sound=" + playMobDeathSound)
-                writer.newLine()
-            }
-        } catch (e: Exception) {
-            plugin.logger.warning("Failed to save configuration: ${e.message}")
-        }
-    }
-
-    fun isEnabled(): Boolean = enabled
-    fun getPlayerChance(): Double = playerChance
-    fun getMobSearchRadius(): Double = mobSearchRadius
-    fun getRouletteIntervalDays(): Long = rouletteIntervalDays
-    fun isAllowNonOperators(): Boolean = allowNonOperators
-    fun isShowStartTitle(): Boolean = showStartTitle
-    fun isShowCompletionTitle(): Boolean = showCompletionTitle
-    fun isShowResultActionbar(): Boolean = showResultActionbar
-    fun isShowStartParticles(): Boolean = showStartParticles
-    fun isPlayStartSound(): Boolean = playStartSound
-    fun isPlayCountdownSound(): Boolean = playCountdownSound
-    fun isPlayPlayerDeathSound(): Boolean = playPlayerDeathSound
-    fun isPlayMobDeathSound(): Boolean = playMobDeathSound
-    fun isAllowPassiveMobs(): Boolean = allowPassiveMobs
-    fun isAllowHostileMobs(): Boolean = allowHostileMobs
-
-    private fun setDefaults() {
-        enabled = defaultEnabled
-        playerChance = defaultPlayerChance
-        mobSearchRadius = defaultMobSearchRadius
-        rouletteIntervalDays = defaultRouletteIntervalDays
-
-        allowNonOperators = defaultAllowNonOperators
-        allowPassiveMobs = defaultAllowPassiveMobs
-        allowHostileMobs = defaultAllowHostileMobs
-
-        showStartTitle = defaultShowStartTitle
-        showCompletionTitle = defaultShowCompletionTitle
-        showResultActionbar = defaultShowResultActionbar
-        showStartParticles = defaultShowStartParticles
-
-        playStartSound = defaultPlayStartSound
-        playCountdownSound = defaultPlayCountdownSound
-        playPlayerDeathSound = defaultPlayPlayerDeathSound
-        playMobDeathSound = defaultPlayMobDeathSound
-    }
-
-    private fun parseBoolean(properties: Properties, key: String, defaultValue: Boolean): Boolean {
-        val value = properties.getProperty(key) ?: return defaultValue
-        if (value.equals("true", ignoreCase = true) || value.equals("false", ignoreCase = true)) {
-            return value.toBoolean()
-        }
-        plugin.logger.warning("Invalid $key: $value. Using default: $defaultValue")
-        return defaultValue
-    }
-
-    private fun parseDouble(
-        properties: Properties,
-        key: String,
-        defaultValue: Double,
-        min: Double,
-        max: Double
-    ): Double {
-        val value = properties.getProperty(key) ?: return defaultValue
-        return try {
-            val parsed = value.toDouble()
-            if (parsed < min || parsed > max) {
-                plugin.logger.warning("Invalid $key: $value. Using default: $defaultValue")
-                defaultValue
-            } else {
-                parsed
-            }
-        } catch (e: NumberFormatException) {
-            plugin.logger.warning("Invalid $key: $value. Using default: $defaultValue")
-            defaultValue
-        }
-    }
-
-    private fun parseLong(
-        properties: Properties,
-        key: String,
-        defaultValue: Long,
+    private fun org.bukkit.configuration.file.FileConfiguration.long(
+        path: String,
+        fallback: Long,
         min: Long,
-        max: Long
+        max: Long,
     ): Long {
-        val value = properties.getProperty(key) ?: return defaultValue
-        return try {
-            val parsed = value.toLong()
-            if (parsed < min || parsed > max) {
-                plugin.logger.warning("Invalid $key: $value. Using default: $defaultValue")
-                defaultValue
-            } else {
-                parsed
-            }
-        } catch (e: NumberFormatException) {
-            plugin.logger.warning("Invalid $key: $value. Using default: $defaultValue")
-            defaultValue
+        val value = getLong(path, fallback)
+        if (value in min..max) {
+            return value
         }
+        warnOutOfRange(path, value, fallback)
+        return fallback
+    }
+
+    private fun org.bukkit.configuration.file.FileConfiguration.double(
+        path: String,
+        fallback: Double,
+        min: Double,
+        max: Double,
+    ): Double {
+        val value = getDouble(path, fallback)
+        if (value.isFinite() && value in min..max) {
+            return value
+        }
+        warnOutOfRange(path, value, fallback)
+        return fallback
+    }
+
+    private fun warnOutOfRange(path: String, value: Any, fallback: Any) {
+        plugin.componentLogger.warn("'{}' is out of range ({}); using {}.", path, value, fallback)
+    }
+
+    private companion object {
+        const val FILE_NAME = "config.yml"
+        const val LEGACY_FILE_NAME = "deathroulette.properties"
+
+        const val ENABLED = "enabled"
+        const val INTERVAL_DAYS = "interval-days"
+        const val PLAYER_CHANCE = "player-chance"
+        const val MOB_SEARCH_RADIUS = "mob-search-radius"
+        const val PASSIVE_MOBS = "mobs.passive"
+        const val HOSTILE_MOBS = "mobs.hostile"
+        const val ALLOW_NON_OPERATORS = "commands.allow-non-operators"
+        const val START_TITLE = "titles.start"
+        const val COMPLETION_TITLE = "titles.completion"
+        const val RESULT_ACTION_BAR = "effects.result-action-bar"
+        const val START_PARTICLES = "effects.start-particles"
+        const val START_SOUND = "sounds.start"
+        const val COUNTDOWN_SOUND = "sounds.countdown"
+        const val PLAYER_DEATH_SOUND = "sounds.player-death"
+        const val MOB_DEATH_SOUND = "sounds.mob-death"
+
+        const val MIN_INTERVAL_DAYS = 1L
+        const val MAX_INTERVAL_DAYS = 1_000_000L
+        const val MIN_CHANCE = 0.0
+        const val MAX_CHANCE = 100.0
+        const val MIN_RADIUS = 1.0
+        const val MAX_RADIUS = 128.0
+
+        /** Maps every key of the retired properties file onto its `config.yml` path. */
+        val LEGACY_KEYS =
+            listOf(
+                "enabled" to ENABLED,
+                "roulette_interval_days" to INTERVAL_DAYS,
+                "player_chance" to PLAYER_CHANCE,
+                "mob_search_radius" to MOB_SEARCH_RADIUS,
+                "allow_passive_mobs" to PASSIVE_MOBS,
+                "allow_hostile_mobs" to HOSTILE_MOBS,
+                "allow_non_operators" to ALLOW_NON_OPERATORS,
+                "show_start_title" to START_TITLE,
+                "show_completion_title" to COMPLETION_TITLE,
+                "show_result_actionbar" to RESULT_ACTION_BAR,
+                "show_start_particles" to START_PARTICLES,
+                "play_start_sound" to START_SOUND,
+                "play_countdown_sound" to COUNTDOWN_SOUND,
+                "play_player_death_sound" to PLAYER_DEATH_SOUND,
+                "play_mob_death_sound" to MOB_DEATH_SOUND,
+            )
     }
 }

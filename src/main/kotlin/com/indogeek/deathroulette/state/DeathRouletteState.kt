@@ -1,64 +1,104 @@
 package com.indogeek.deathroulette.state
 
-import java.io.File
+import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.Path
+import java.util.Properties
+import org.bukkit.configuration.file.YamlConfiguration
 import org.bukkit.plugin.Plugin
 
 /**
- * Persistent-state container for Death Roulette.
+ * Persists the small amount of data a running roulette needs to survive a restart.
  *
- * Lightweight engagement data (the running flag, the world time the roulette
- * started at, and the last processed day) is kept in a simple properties file
- * under the plugin's data folder so a running roulette survives a server
- * restart.
+ * The snapshot lives in `plugins/DeathRoulette/state.yml`, separate from the user facing
+ * configuration, because it is written by the plugin and is not meant to be edited by hand.
  */
-class DeathRouletteState private constructor(private val plugin: Plugin) {
+class DeathRouletteState(private val plugin: Plugin) {
 
-    private fun stateFile(): File {
-        plugin.dataFolder.mkdirs()
-        return File(plugin.dataFolder, "state.properties")
+    private val file: Path
+        get() = plugin.dataPath.resolve(FILE_NAME)
+
+    /** Returns the persisted snapshot, or [Snapshot.EMPTY] when there is nothing usable on disk. */
+    fun read(): Snapshot {
+        val path = file
+        if (Files.notExists(path)) {
+            return readLegacyFile() ?: Snapshot.EMPTY
+        }
+        val yaml = YamlConfiguration.loadConfiguration(path.toFile())
+        return Snapshot(
+            running = yaml.getBoolean(KEY_RUNNING, Snapshot.EMPTY.running),
+            startWorldTime = yaml.getLong(KEY_START_WORLD_TIME, Snapshot.EMPTY.startWorldTime),
+            lastProcessedDay =
+                yaml.getLong(KEY_LAST_PROCESSED_DAY, Snapshot.EMPTY.lastProcessedDay),
+        )
     }
 
-    /** Reads [running], [startWorldTime], [lastProcessedDay] from disk. */
-    fun read(): PersistedState {
-        val file = stateFile()
-        if (!file.exists()) {
-            return PersistedState(running = false, startWorldTime = 0L, lastProcessedDay = -1L)
+    /** Overwrites the persisted snapshot with [snapshot]. */
+    fun write(snapshot: Snapshot) {
+        val yaml =
+            YamlConfiguration().apply {
+                options().setHeader(HEADER)
+                set(KEY_RUNNING, snapshot.running)
+                set(KEY_START_WORLD_TIME, snapshot.startWorldTime)
+                set(KEY_LAST_PROCESSED_DAY, snapshot.lastProcessedDay)
+            }
+        try {
+            val path = file
+            Files.createDirectories(path.parent)
+            yaml.save(path.toFile())
+        } catch (exception: IOException) {
+            plugin.componentLogger.warn("Could not write {}.", FILE_NAME, exception)
+        }
+    }
+
+    /** Reads the retired properties based snapshot once, then removes it. */
+    private fun readLegacyFile(): Snapshot? {
+        val legacy = plugin.dataPath.resolve(LEGACY_FILE_NAME)
+        if (Files.notExists(legacy)) {
+            return null
         }
         return try {
-            val props = java.util.Properties()
-            file.inputStream().use { props.load(it) }
-            PersistedState(
-                running = props.getProperty("running", "false").toBoolean(),
-                startWorldTime = props.getProperty("startWorldTime", "0").toLong(),
-                lastProcessedDay = props.getProperty("lastProcessedDay", "-1").toLong())
-        } catch (e: Exception) {
-            plugin.logger.warning("Failed to load Death Roulette state: ${e.message}")
-            PersistedState(running = false, startWorldTime = 0L, lastProcessedDay = -1L)
+            val properties = Properties()
+            Files.newInputStream(legacy).use(properties::load)
+            val snapshot =
+                Snapshot(
+                    running = properties.getProperty("running").toBoolean(),
+                    startWorldTime = properties.getProperty("startWorldTime")?.toLongOrNull() ?: 0L,
+                    lastProcessedDay =
+                        properties.getProperty("lastProcessedDay")?.toLongOrNull() ?: -1L,
+                )
+            write(snapshot)
+            Files.deleteIfExists(legacy)
+            snapshot
+        } catch (exception: IOException) {
+            plugin.componentLogger.warn(
+                "Could not read {}; starting fresh.",
+                LEGACY_FILE_NAME,
+                exception,
+            )
+            null
         }
     }
 
-    /** Writes [running], [startWorldTime], [lastProcessedDay] to disk. */
-    fun write(running: Boolean, startWorldTime: Long, lastProcessedDay: Long) {
-        try {
-            val file = stateFile()
-            val props = java.util.Properties()
-            props.setProperty("running", running.toString())
-            props.setProperty("startWorldTime", startWorldTime.toString())
-            props.setProperty("lastProcessedDay", lastProcessedDay.toString())
-            file.outputStream().use { props.store(it, "Death Roulette persistent state") }
-        } catch (e: Exception) {
-            plugin.logger.warning("Failed to save Death Roulette state: ${e.message}")
+    /** Immutable snapshot of a roulette in progress. */
+    data class Snapshot(
+        val running: Boolean,
+        val startWorldTime: Long,
+        val lastProcessedDay: Long,
+    ) {
+        companion object {
+            val EMPTY = Snapshot(running = false, startWorldTime = 0L, lastProcessedDay = -1L)
         }
     }
 
-    companion object {
-        fun get(plugin: Plugin): DeathRouletteState = DeathRouletteState(plugin)
+    private companion object {
+        const val FILE_NAME = "state.yml"
+        const val LEGACY_FILE_NAME = "state.properties"
+        const val KEY_RUNNING = "running"
+        const val KEY_START_WORLD_TIME = "start-world-time"
+        const val KEY_LAST_PROCESSED_DAY = "last-processed-day"
+
+        val HEADER =
+            listOf("Death Roulette runtime state.", "Managed by the plugin - do not edit by hand.")
     }
 }
-
-/** Immutable snapshot of the persisted Death Roulette state. */
-data class PersistedState(
-    val running: Boolean,
-    val startWorldTime: Long,
-    val lastProcessedDay: Long
-)

@@ -1,77 +1,70 @@
 plugins {
-    id 'java'
-    id 'org.jetbrains.kotlin.jvm' version "${kotlin_version}"
-    id 'com.gradleup.shadow' version '9.0.0'
-    id 'xyz.jpenilla.run-paper' version '3.0.2'
+    alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.shadow)
+    alias(libs.plugins.run.paper)
 }
+
+group = 'com.indogeek.deathroulette'
+version = '1.0.0'
+
+description = 'Paper plugin that periodically kills a random player or a mob near them.'
 
 repositories {
     mavenCentral()
     maven {
-        name = 'PaperMC'
+        name = 'papermc'
         url = 'https://repo.papermc.io/repository/maven-public/'
     }
 }
 
 dependencies {
-    compileOnly "io.papermc.paper:paper-api:${paper_api_version}"
-
-    implementation "org.jetbrains.kotlin:kotlin-stdlib:${kotlin_version}"
-}
-
-group = rootProject.group
-version = rootProject.version
-
-java {
-    sourceCompatibility = JavaVersion.VERSION_17
-    targetCompatibility = JavaVersion.VERSION_17
+    compileOnly libs.paper.api
+    implementation libs.kotlin.stdlib
 }
 
 kotlin {
-    jvmToolchain(17)
-}
+    jvmToolchain(libs.versions.java.get().toInteger())
 
-tasks {
-    runServer {
-        minecraftVersion(minecraft_version)
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.fromTarget(libs.versions.java.get())
+        // Treat every compiler warning as a build failure so the source tree stays clean.
+        allWarningsAsErrors = true
+        extraWarnings = true
+        progressiveMode = true
     }
 }
 
-jar {
-    // The standalone jar without the Kotlin runtime is not usable, so we only
-    // publish the shadow jar produced below.
+tasks.named('processResources') {
+    def props = [version: version, apiVersion: libs.versions.minecraft.get()]
+    inputs.properties props
+    filesMatching('paper-plugin.yml') {
+        expand props
+    }
+}
+
+tasks.named('jar') {
+    // Only the shaded jar is usable: it carries the relocated Kotlin runtime.
     enabled = false
 }
 
-shadowJar {
-    archiveClassifier.set('')
+tasks.named('shadowJar') {
+    archiveBaseName = 'DeathRoulette'
+    archiveClassifier = ''
     mergeServiceFiles()
-    relocate 'kotlin', 'com.indogeek.deathroulette.repackage.kotlin'
-
+    relocate 'kotlin', 'com.indogeek.deathroulette.libs.kotlin'
+    // Let the Kotlin module metadata transformer see every entry before merging them.
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    // The plugin is loaded from the class path, never the module path.
+    exclude 'META-INF/versions/*/module-info.class'
     manifest {
         attributes 'Multi-Release': 'true'
     }
 }
 
-build {
-    dependsOn shadowJar
+tasks.named('assemble') {
+    dependsOn tasks.named('shadowJar')
 }
 
-processResources {
-    def version = project.version
-    inputs.property 'version', version
-
-    filesMatching('plugin.yml') {
-        expand 'version': version
-    }
-}
-
-tasks.withType(JavaCompile).configureEach {
-    it.options.release = 17
-}
-
-tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
-    kotlinOptions {
-        jvmTarget = '17'
-    }
+tasks.named('runServer') {
+    minecraftVersion libs.versions.minecraft.get()
 }

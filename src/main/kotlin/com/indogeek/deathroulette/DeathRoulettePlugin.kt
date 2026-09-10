@@ -3,42 +3,36 @@ package com.indogeek.deathroulette
 import com.indogeek.deathroulette.command.DeathRouletteCommand
 import com.indogeek.deathroulette.config.DeathRouletteConfig
 import com.indogeek.deathroulette.game.DeathRouletteGame
+import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents
 import org.bukkit.plugin.java.JavaPlugin
 
+/**
+ * Entry point for the Death Roulette plugin.
+ *
+ * The plugin owns exactly one [DeathRouletteConfig] and one [DeathRouletteGame]; both are created
+ * in [onEnable] and torn down in [onDisable] so nothing survives a plugin reload.
+ */
 class DeathRoulettePlugin : JavaPlugin() {
 
+    private lateinit var configuration: DeathRouletteConfig
+    private lateinit var game: DeathRouletteGame
+
     override fun onEnable() {
-        instance = this
+        configuration = DeathRouletteConfig(this).apply { load() }
+        game = DeathRouletteGame(this, configuration)
 
-        // Load configuration first.
-        CONFIG = DeathRouletteConfig(this)
-        CONFIG.load()
-
-        // Register the /roulette command.
-        DeathRouletteCommand(this)
-
-        val game = DeathRouletteGame.getInstance(this)
-
-        // Restore any previously running roulette.
-        game.loadState()
-
-        // Auto-start if the configuration wants it.
-        if (CONFIG.isEnabled() && !game.isRunning()) {
-            game.start()
-            logger.info("Death Roulette has been enabled")
+        lifecycleManager.registerEventHandler(LifecycleEvents.COMMANDS) { event ->
+            DeathRouletteCommand(configuration, game).register(event.registrar())
         }
 
-        logger.info("[Death Roulette] Plugin enabled!")
+        game.enable()
+        componentLogger.info("Enabled ({}).", game.summary)
     }
 
     override fun onDisable() {
-        DeathRouletteGame.getInstance(this).saveState()
-        logger.info("[Death Roulette] Plugin disabled!")
-    }
-
-    companion object {
-        const val MOD_ID = "deathroulette"
-        lateinit var instance: DeathRoulettePlugin
-        lateinit var CONFIG: DeathRouletteConfig
+        if (this::game.isInitialized) {
+            game.disable()
+        }
+        componentLogger.info("Disabled.")
     }
 }

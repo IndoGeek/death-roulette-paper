@@ -1,0 +1,34 @@
+name: DeathRoulette
+version: ${version}
+main: com.indogeek.deathroulette.DeathRoulettePlugin
+api-version: '${apiVersion}'
+description: Periodically kills a random player or nearby mob.
+authors:
+  - IndoGeek
+website: https://github.com/IndoGeek/death-roulette
+
+permissions:
+  deathroulette.command:
+    description: Access to /roulette.
+    default: op
+    children:
+      deathroulette.command.start: true
+      deathroulette.command.stop: true
+      deathroulette.command.status: true
+      deathroulette.command.reload: true
+      deathroulette.command.test: true
+  deathroulette.command.start:
+    description: Start a roulette.
+    default: op
+  deathroulette.command.stop:
+    description: Stop the roulette.
+    default: op
+  deathroulette.command.status:
+    description: Show the roulette status.
+    default: op
+  deathroulette.command.reload:
+    description: Reload the configuration.
+    default: op
+  deathroulette.command.test:
+    description: Skip ahead by a number of days.
+    default: op

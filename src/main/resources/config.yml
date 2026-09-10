@@ -1,0 +1,60 @@
+# ============================================================
+#  Death Roulette
+# ============================================================
+#  Every so many in-game days the wheel spins and a random
+#  survival player, or a mob near them, is killed.
+#
+#  Edit this file and run /roulette reload to apply changes.
+# ============================================================
+
+# Master switch for the automatic roulette.
+#   true  = rounds are scheduled automatically
+#   false = rounds only happen through /roulette start
+enabled: true
+
+# Minecraft days between roulette rounds.
+interval-days: 10
+
+# Chance of picking a player instead of a mob, in percent.
+#   0.0   = always a mob
+#   50.0  = even odds
+#   100.0 = always a player
+player-chance: 30.0
+
+# Block radius searched around the anchor player when picking a mob.
+mob-search-radius: 32.0
+
+# Which mobs the wheel is allowed to choose.
+mobs:
+  # Allow peaceful mobs, such as cows and villagers.
+  passive: true
+  # Allow hostile mobs, such as zombies and creepers.
+  hostile: true
+
+commands:
+  # Let every player run /roulette, ignoring the deathroulette.* permissions.
+  #   false = operators and permission holders only
+  allow-non-operators: false
+
+# Full screen titles shown to everyone.
+titles:
+  # Title announcing that a new round has started.
+  start: true
+  # Title announcing the result of a round.
+  completion: true
+
+effects:
+  # Show the chosen player or mob in the action bar.
+  result-action-bar: true
+  # Spawn totem particles around every player when a round starts.
+  start-particles: true
+
+sounds:
+  # Sound played when a round starts.
+  start: true
+  # Note block tick played during the ten second countdown.
+  countdown: true
+  # Sound played when a player is chosen.
+  player-death: true
+  # Sound played when a mob is chosen.
+  mob-death: true

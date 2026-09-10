@@ -2,23 +2,21 @@
 .gradle/
 build/
 
-# Fabric development run directory
+# Paper development server created by the run-paper plugin
 run/
 
-# IntelliJ
+# IntelliJ IDEA
 .idea/
 *.iml
 
-# Eclipse
+# Eclipse / VS Code Java
 bin/
 .classpath
 .project
 .settings/
-
-# VS Code
 .vscode/
 
-# Java
+# Compiled output
 *.class
 
 # OS files
@@ -28,8 +26,5 @@ Thumbs.db
 # Logs
 *.log
 
-# ENV
+# Environment
 .env
-
-# Backup
-*.java.backup
